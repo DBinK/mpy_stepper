@@ -3,27 +3,29 @@ import math
 from machine import Pin, PWM, Timer
 
 class StepperMotor:
-    def __init__(self, pin_num, min_speed=1, max_speed=500):
-        self.pin = Pin(pin_num, Pin.OUT)
-        self.pwm = PWM(self.pin, duty_u16=32768)
+    def __init__(self, step_pin, dir_pin=1, min_speed=8, max_speed=500, period=20):
+        self.step_pin = Pin(step_pin, Pin.OUT)
+        self.dir_pin = Pin(dir_pin, Pin.OUT)
+        self.pwm = PWM(self.step_pin, duty_u16=32768)
         self.speed = 0
         self.min_speed = min_speed
         self.max_speed = max_speed
+        self.period = period
         
         # 初始化定时器
         self.tim = Timer(-1)
-        self.tim.init(period=20, mode=Timer.PERIODIC, callback=self._update_speed)
+        self.tim.init(period=self.period, mode=Timer.PERIODIC, callback=self._update_speed)
 
     def _update_speed(self, tim_callback):
         """内部速度更新方法"""
-        if self.speed <= 0:
+        if self.speed < abs(self.min_speed):
             self.pwm.duty_u16(0)
         else:
-            # 限制速度范围
-            clamped_speed = max(self.min_speed, min(self.speed, self.max_speed))
-            self.pwm.duty_u16(32768)
-            self.pwm.freq(clamped_speed + 10)  # 保持原逻辑+10偏移量
-            print(f"Current speed: {clamped_speed} Hz")
+            self.dir_pin.value(1 if self.speed > 0 else 0)  # 设置方向
+            clamped_speed = max(self.min_speed, min(self.speed, self.max_speed))  # 限制速度范围
+            self.pwm.duty_u16(32768)  # 设置 50% 占空比
+            self.pwm.freq(clamped_speed)  # 设置 速度
+            print(f"Current step speed: {clamped_speed} Hz")
 
     def set_speed(self, new_speed):
         """设置电机转速"""
@@ -36,7 +38,7 @@ class StepperMotor:
 
 if __name__ == "__main__":
 
-    motor = StepperMotor(pin_num=25)
+    motor = StepperMotor(step_pin=25)
     print("Motor controller started")
 
     # 模拟速度控制
