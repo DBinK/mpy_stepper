@@ -27,7 +27,7 @@ class StepperMotor:
 
 
 class MultiMotorManager:
-    def __init__(self, period=20, timer_id=-1):
+    def __init__(self, period=1, timer_id=-1):
         self.motors = []
         self.tim = Timer(timer_id)
         self.tim.init(period=period, mode=Timer.PERIODIC, callback=self._update_all)
@@ -61,7 +61,7 @@ if __name__ == "__main__":
             speed2 = int(math.cos(i/8) * 30 + 100)
             motor1.speed = speed1
             motor2.speed = speed2
-            time.sleep(0.01)
+            time.sleep(0.005)
             
     except KeyboardInterrupt:
         motor1.pwm.duty_u16(0)
