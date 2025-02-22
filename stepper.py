@@ -1,68 +1,133 @@
+import _thread
 import time
 import math
 from machine import Pin, PWM, Timer
 
 class StepperMotor:
+    MODE_SPEED = 0
+    MODE_POSITION = 1
+    
     def __init__(self, step_pin, dir_pin=1, min_speed=8, max_speed=500):
-        self.step_pin_id = step_pin
+        # 硬件资源初始化
+        self.step_pin = step_pin
+        self.dir_pin = dir_pin
         self.s_pin = Pin(step_pin, Pin.OUT)
         self.d_pin = Pin(dir_pin, Pin.OUT)
-        self.pwm = PWM(self.s_pin, duty_u16=32768)
-        self.speed = 0
+        self.pwm = PWM(self.s_pin, duty_u16=0)  # 初始关闭PWM
+        
+        # 公共配置
+        self.mode = self.MODE_SPEED
         self.min_speed = min_speed
         self.max_speed = max_speed
+        self.current_speed = 0
+        self.target_position = 0
+        self.current_position = 0
         
-    def _update(self):
-        """由管理器调用的内部更新方法"""
-        if self.speed < abs(self.min_speed):
+        # 位置模式专用属性
+        self._stop_flag = False
+        self._active_thread = None
+
+    def set_mode(self, mode):
+        """模式切换核心方法"""
+        if mode == self.mode:
+            return
+        
+        # 先停止当前模式
+        if self.mode == self.MODE_SPEED:
             self.pwm.duty_u16(0)
-            print(f" {self.step_pin_id}_speed: 速度太小", end= " | ")
         else:
-            self.d_pin.value(1 if self.speed > 0 else 0)
-            clamped_speed = max(self.min_speed, min(abs(self.speed), self.max_speed))
-            self.pwm.duty_u16(32768)
-            self.pwm.freq(clamped_speed)
+            self._stop_motion()
+        
+        # 初始化新模式
+        self.mode = mode
+        if mode == self.MODE_POSITION:
+            print(f"[{self.step_pin}] 切换到位置模式")
+            self._init_position_mode()
+        else:
+            print(f"[{self.step_pin}] 切换到速度模式")
+            self._init_speed_mode()
 
-            print(f" {self.step_pin_id}_speed: {clamped_speed} Hz", end= " | ")
+    def _init_speed_mode(self):
+        """速度模式初始化"""
+        self.pwm.duty_u16(32768)
 
+    def _init_position_mode(self):
+        """位置模式初始化"""
+        self.pwm.duty_u16(0)  # 关闭PWM
+        self.s_pin.off()      # 确保步进脉冲为低
 
-class MultiMotorManager:
-    def __init__(self, period=1, timer_id=-1):
-        self.motors = []
-        self.tim = Timer(timer_id)
-        self.tim.init(period=period, mode=Timer.PERIODIC, callback=self._update_all)
-    
-    def add_motor(self, motor: StepperMotor):
-        """注册电机到管理器"""
-        self.motors.append(motor)
-    
-    def _update_all(self, tim_callback):
-        """定时器回调：更新所有注册的电机"""
-        for motor in self.motors:
-            motor._update()
+    def move(self, value):
+        """
+        统一移动接口
+        :param value: 速度模式下为转速（Hz），位置模式下为目标位置
+        """
+        if self.mode == self.MODE_SPEED:
+            self._set_speed(value)
+        else:
+            self._move_to_position(value)
 
-        print("")  # 换行
+    # 速度模式方法 ----------------------------------
+    def _set_speed(self, speed):
+        """设置转速（Hz）"""
+        self.current_speed = speed
+        if abs(speed) < self.min_speed:
+            self.pwm.duty_u16(0)
+            return
+            
+        self.d_pin.value(1 if speed > 0 else 0)
+        clamped_speed = max(self.min_speed, min(abs(speed), self.max_speed))
+        self.pwm.freq(clamped_speed)
+        self.pwm.duty_u16(32768)
+
+    # 位置模式方法 ----------------------------------
+    def _move_to_position(self, target):
+        """非阻塞式移动到目标位置"""
+        if self._active_thread:
+            self._stop_motion()
+            
+        steps = target - self.current_position
+        self._active_thread = _thread.start_new_thread(
+            self._position_worker, (abs(steps), 100)  # 100为默认速度
+        )
+
+    def _position_worker(self, steps, speed):
+        """位置控制线程"""
+        self._stop_flag = False
+        direction = steps > 0
+        self.d_pin.value(1 if direction else 0)
+        
+        for _ in range(abs(steps)):
+            if self._stop_flag:
+                break
+                
+            self.s_pin.on()
+            time.sleep(0.5 / speed)
+            self.s_pin.off()
+            time.sleep(0.5 / speed)
+            
+            self.current_position += 1 if direction else -1
+            
+        self._active_thread = None
+
+    def _stop_motion(self):
+        """停止位置模式运动"""
+        if self._active_thread:
+            self._stop_flag = True
+            while self._active_thread:
+                time.sleep(0.01)
 
 # 使用示例
 if __name__ == "__main__":
-    # 创建管理器（共享定时器）
-    manager = MultiMotorManager(period=20, timer_id=-1)
+    motor = StepperMotor(step_pin=8, dir_pin=1)
     
-    # 创建多个电机并注册到管理器
-    motor1 = StepperMotor(step_pin=8, dir_pin=1)
-    motor2 = StepperMotor(step_pin=9, dir_pin=2)
-    manager.add_motor(motor1)
-    manager.add_motor(motor2)
+    # 速度模式演示
+    motor.set_mode(StepperMotor.MODE_SPEED)
+    motor.move(200)  # 200Hz正转
+    time.sleep(2)
+    motor.move(-150) # 150Hz反转
     
-    try:
-        for i in range(100000):
-            # 两个电机不同速度曲线
-            speed1 = int(math.sin(i/10) * 25 + 100)
-            speed2 = int(math.cos(i/8) * 30 + 100)
-            motor1.speed = speed1
-            motor2.speed = speed2
-            time.sleep(0.005)
-            
-    except KeyboardInterrupt:
-        motor1.pwm.duty_u16(0)
-        motor2.pwm.duty_u16(0)
+    # 位置模式演示
+    motor.set_mode(StepperMotor.MODE_POSITION)
+    motor.move(500)  # 移动500步
+    time.sleep(3)
+    motor.move(0)    # 返回原点

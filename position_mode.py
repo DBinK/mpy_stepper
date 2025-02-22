@@ -62,13 +62,15 @@ class StepperMotor:
 
 # 使用示例
 if __name__ == '__main__':
-    motor = StepperMotor(step_pin=8, dir_pin=0)
+    motor_1 = StepperMotor(step_pin=8, dir_pin=0)
+    motor_2 = StepperMotor(step_pin=9, dir_pin=1)
     
     # 正转100步，速度1Hz
-    motor.move(100, 1)
+    motor_1.move(100, 1)
+    motor_2.move(100, 1)
     time.sleep(3)
     
     # 反转200步，速度2Hz
-    motor.move(-200, 5)
+    motor_1.move(-200, 5)
     time.sleep(3)
-    motor.stop()
+    motor_1.stop()
