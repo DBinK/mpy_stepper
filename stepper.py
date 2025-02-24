@@ -111,7 +111,7 @@ if __name__ == "__main__":
     
     # 测试步数模式
     motor1.move(100, 1)
-    time.sleep(2)
+    time.sleep(2)L
     
     # 测试速度模式
     manager = MultiMotorManager(period=20, timer_id=-1)

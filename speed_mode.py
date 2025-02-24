@@ -3,7 +3,7 @@ import math
 from machine import Pin, PWM, Timer
 
 class StepperMotor:
-    def __init__(self, step_pin, dir_pin=1, min_speed=8, max_speed=500):
+    def __init__(self, step_pin, dir_pin=1, min_speed=8, max_speed=500000):
         self.motor_id = step_pin
         self.step_pin = Pin(step_pin, Pin.OUT)
         self.dir_pin = Pin(dir_pin, Pin.OUT)
@@ -14,7 +14,7 @@ class StepperMotor:
         
     def _update(self):
         """由管理器调用的内部更新方法"""
-        if self.speed < abs(self.min_speed):
+        if abs(self.speed) < abs(self.min_speed):
             self.pwm.duty_u16(0)
             print(f" {self.motor_id}_speed: 速度太小", end= " | ")
         else:
@@ -56,19 +56,25 @@ if __name__ == "__main__":
     manager = MultiMotorManager(period=20, timer_id=-1)
     
     # 创建多个电机并注册到管理器
-    motor1 = StepperMotor(step_pin=8, dir_pin=1)
-    motor2 = StepperMotor(step_pin=9, dir_pin=2)
+    motor1 = StepperMotor(step_pin=25, dir_pin=27)
+    motor2 = StepperMotor(step_pin=26, dir_pin=16)
     manager.add_motor(motor1)
     manager.add_motor(motor2)
+    
+    motor1.speed = 3000
+    time.sleep(2)
+    motor1.speed = -2000
+    time.sleep(9)
     
     try:
         for i in range(100000):
             # 两个电机不同速度曲线
-            speed1 = int(math.sin(i/10) * 25 + 100)
-            speed2 = int(math.cos(i/8) * 30 + 100)
+            AMP = 4000
+            speed1 = int(math.sin(i/50) * AMP + AMP)
+            speed2 = int(math.cos(i/3) * AMP + AMP)
             motor1.speed = speed1
             motor2.speed = speed2
-            time.sleep(0.005)
+            time.sleep(0.02)
             
     except KeyboardInterrupt:
         motor1.pwm.duty_u16(0)
